@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>WebAR 相機</title>
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="WebAR Camera">
+    <meta name="theme-color" content="#052e16">
+    
+    <link rel="manifest" href="./manifest.json">
+    <link rel="apple-touch-icon" href="./loading.png">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Pinyon+Script&display=swap" rel="stylesheet">
+
+    <script src="./portrait-paths.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #000;
+            margin: 0;
+            overflow: hidden;
+            touch-action: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            width: 100vw;
+            overscroll-behavior: none;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            font-family: 'Pinyon Script', cursive;
+        }
+
+        #app-frame {
+            position: relative;
+            background: #000;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            width: 100vw;
+            height: 177.78vw; 
+            max-width: 100vw;
+            max-height: 100vh;
+            margin-bottom: 15vh; /* 保持畫面向上偏移 */
+        }
+
+        @media (min-aspect-ratio: 9/16) {
+            #app-frame {
+                height: 100vh;
+                width: 56.25vh;
+            }
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .flash-effect {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: white;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 50;
+            transition: opacity 0.1s ease-out;
+        }
+        .flash-active { opacity: 1; }
+
+        .fade-out {
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.8s ease-out;
+        }
+        
+        #loading-screen {
+            background-color: #052e16; 
+            background-image: 
+                radial-gradient(circle at 100% 50%, transparent 20%, rgba(255,255,255,0.015) 21%, rgba(255,255,255,0.015) 34%, transparent 35%, transparent),
+                radial-gradient(circle at 0% 50%, transparent 20%, rgba(255,255,255,0.015) 21%, rgba(255,255,255,0.015) 34%, transparent 35%, transparent) bottom right;
+            background-size: 30px 30px; 
+            background: 
+                radial-gradient(circle, rgba(255,255,255,0) 0%, rgba(0,0,0,0.6) 100%),
+                radial-gradient(circle at 100% 50%, transparent 20%, rgba(255,255,255,0.015) 21%, rgba(255,255,255,0.015) 34%, transparent 35%, transparent),
+                radial-gradient(circle at 0% 50%, transparent 20%, rgba(255,255,255,0.015) 21%, rgba(255,255,255,0.015) 34%, transparent 35%, transparent) bottom right,
+                #052e16;
+            background-size: cover, 30px 30px, 30px 30px, cover;
+        }
+
+        .svg-container {
+            width: 90%;
+            max-width: 400px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 5vh; 
+        }
+
+        .draw-path {
+            fill: none !important;
+            stroke: url(#goldGradient);
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        
+        .portrait-path {
+            stroke-width: 18;
+            stroke-dasharray: 9000; 
+            stroke-dashoffset: 9000;
+            animation: drawLine 4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+
+        .text-style {
+            font-family: 'Pinyon Script', cursive; 
+            font-size: 76px; 
+            letter-spacing: 4px; 
+            fill: url(#goldGradient); 
+            fill-opacity: 0; 
+            stroke: url(#goldGradient);
+            stroke-width: 0.8px; 
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000; 
+            animation: 
+                drawText 4s ease-out 1.5s forwards, 
+                fillText 2.5s ease-out 5s forwards; 
+        }
+
+        @keyframes drawLine {
+            to { stroke-dashoffset: 0; }
+        }
+
+        @keyframes drawText {
+            to { stroke-dashoffset: 0; }
+        }
+
+        @keyframes fillText {
+            to { fill-opacity: 1; }
+        }
+        
+        .glow-effect {
+            animation: glow 3s ease-in-out infinite alternate 5s;
+        }
+
+        @keyframes glow {
+            from { filter: drop-shadow(0 0 1px rgba(212, 175, 55, 0.2)); }
+            to { filter: drop-shadow(0 0 12px rgba(212, 175, 55, 0.8)); }
+        }
+        
+        .wait-for-anim {
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease-in;
+        }
+        .anim-done {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .dots-container {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 10px; 
+            z-index: 30;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            border: 1px solid #D4AF37; 
+            background-color: transparent;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            opacity: 0.5;
+            position: relative;
+        }
+        
+        .dot::after {
+            content: '';
+            position: absolute;
+            top: -10px; bottom: -10px; left: -10px; right: -10px;
+        }
+
+        .dot.active {
+            background-color: #D4AF37; 
+            opacity: 1;
+            transform: scale(1.2);
+            box-shadow: 0 0 8px rgba(212, 175, 55, 0.6);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- SVG Loading Screen -->
+    <div id="loading-screen" class="fixed inset-0 z-[100] flex flex-col items-center justify-center p-4">
+        <div class="svg-container glow-effect">
+            <!-- 修改 1: viewBox 高度從 850 改為 700，讓畫面更緊湊 -->
+            <svg viewBox="0 0 600 700" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: auto;">
+                <defs>
+                    <linearGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#C5A059" /> 
+                        <stop offset="40%" stop-color="#FFD700" /> 
+                        <stop offset="80%" stop-color="#DAA520" /> 
+                        <stop offset="100%" stop-color="#B8860B" /> 
+                    </linearGradient>
+                </defs>
+                <g id="portrait-group" transform="translate(0, 50)"></g>
+                
+                <!-- 修改 2: 文字 y 座標從 800 上調至 580，更貼近圖片 -->
+                <text x="300" y="580" text-anchor="middle" class="text-style">
+                    Cherry & Cheukyau
+                </text>
+            </svg>
+        </div>
+        
+        <div class="relative z-10 flex flex-col items-center mt-8 wait-for-anim" id="controls-area">
+            <div id="loading-text" class="flex items-center gap-2 text-[#D4AF37] text-xs tracking-[0.4em] uppercase opacity-80 animate-pulse">
+                <span>Loading</span>
+            </div>
+            <button id="start-btn" class="hidden px-8 py-3 border border-[#D4AF37] text-[#D4AF37] rounded-full text-lg uppercase tracking-widest hover:bg-[#D4AF37] hover:text-black transition duration-300 backdrop-blur-sm shadow-[0_0_15px_rgba(212,175,55,0.3)]">
+                點擊啟動相機
+            </button>
+            <p id="error-msg" class="hidden mt-4 text-red-300 text-xs px-4 text-center"></p>
+        </div>
+    </div>
+
+    <video id="video" playsinline muted autoplay class="hidden"></video>
+    <img id="overlay-img" class="hidden" crossorigin="anonymous">
+
+    <div id="app-frame">
+        <canvas id="canvas"></canvas>
+        <div id="flash" class="flash-effect"></div>
+
+        <div class="absolute top-12 right-6 z-20"> 
+            <button id="switch-camera" class="bg-black/20 backdrop-blur-md w-12 h-12 rounded-full flex items-center justify-center border border-white/20 active:scale-95 transition text-white hover:bg-black/40 shadow-lg">
+                <i class="fas fa-sync-alt text-xl"></i>
+            </button>
+        </div>
+
+        <div class="absolute bottom-16 left-0 w-full flex flex-col items-center z-20 gap-4">
+            
+            <div id="dots-bar" class="dots-container"></div>
+
+            <button id="shutter-btn" class="w-16 h-16 rounded-full border-4 border-white bg-white/20 backdrop-blur-sm flex items-center justify-center active:scale-90 transition duration-150 group shadow-lg">
+                <div class="w-12 h-12 bg-white rounded-full shadow-lg group-hover:scale-95 transition"></div>
+            </button>
+        </div>
+
+        <div id="swipe-hint" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-white/50 text-4xl pointer-events-none animate-pulse">
+            <i class="fas fa-hand-point-up transform -rotate-45"></i>
+        </div>
+        
+        <div id="message" class="hidden absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/80 px-6 py-4 rounded-xl text-center z-50 backdrop-blur-md border border-white/10 text-white shadow-xl transition-all">
+            <p id="msg-text">圖片已下載</p>
+        </div>
+    </div>
+
+    <script>
+        if (typeof PORTRAIT_PATHS_DATA !== 'undefined') {
+            document.getElementById('portrait-group').innerHTML = PORTRAIT_PATHS_DATA;
+        }
+
+        const filterList = ['./cat1.png', './cat2.png', './cat3.png', './cat4.png'];
+        
+        const dotsBar = document.getElementById('dots-bar');
+
+        function initDots() {
+            dotsBar.innerHTML = ''; 
+            filterList.forEach((_, index) => {
+                const dot = document.createElement('div');
+                dot.className = `dot ${index === currentFilterIndex ? 'active' : ''}`;
+                dot.onclick = () => {
+                    currentFilterIndex = index;
+                    loadCurrentFilter();
+                };
+                dotsBar.appendChild(dot);
+            });
+        }
+
+        function updateDotsUI() {
+            const dots = document.querySelectorAll('.dot');
+            dots.forEach((dot, index) => {
+                if (index === currentFilterIndex) {
+                    dot.classList.add('active');
+                } else {
+                    dot.classList.remove('active');
+                }
+            });
+        }
+
+        const demoColors = ['#FF0000', '#00FF00'];
+        const demoFilters = demoColors.map((color, i) => {
+            const c = document.createElement('canvas');
+            c.width = 1080; c.height = 1920;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = color + "33"; 
+            ctx.fillRect(0,0,1080,1920);
+            return c.toDataURL();
+        });
+        
+        let useDemo = false; 
+        let currentFilterIndex = 0;
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+        const overlayImg = document.getElementById('overlay-img');
+        const shutterBtn = document.getElementById('shutter-btn');
+        const switchBtn = document.getElementById('switch-camera');
+        const flash = document.getElementById('flash');
+        const appFrame = document.getElementById('app-frame');
+        const loadingScreen = document.getElementById('loading-screen'); 
+        const startBtn = document.getElementById('start-btn');
+        const loadingText = document.getElementById('loading-text');
+        const errorMsg = document.getElementById('error-msg');
+        const controlsArea = document.getElementById('controls-area');
+        
+        let animationId;
+        let currentStream;
+        let facingMode = 'user';
+        let CANVAS_WIDTH = 1080;
+        let CANVAS_HEIGHT = 1920;
+        
+        function resizeCanvas() {
+            const rect = appFrame.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            CANVAS_WIDTH = canvas.width;
+            CANVAS_HEIGHT = canvas.height;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function loadCurrentFilter() {
+            let src = filterList[currentFilterIndex];
+            if (useDemo) src = demoFilters[currentFilterIndex % demoFilters.length];
+            showMsg(`Filter ${currentFilterIndex + 1}`);
+
+            const tempImg = new Image();
+            tempImg.onload = () => { overlayImg.src = src; };
+            tempImg.onerror = () => {
+                useDemo = true;
+                loadCurrentFilter();
+            };
+            tempImg.src = src;
+            
+            updateDotsUI(); 
+        }
+
+        setTimeout(() => {
+            controlsArea.classList.add('anim-done');
+            loadingText.style.display = 'none'; 
+            startBtn.classList.remove('hidden'); 
+        }, 5500);
+
+        startBtn.addEventListener('click', () => {
+            startBtn.innerText = "啟動中...";
+            startBtn.disabled = true; 
+            initCamera(); 
+        });
+
+        async function initCamera(retryMode = false) {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+            }
+
+            const constraints = {
+                audio: false,
+                video: retryMode ? { facingMode: facingMode } : {
+                    facingMode: facingMode,
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 } 
+                }
+            };
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                currentStream = stream;
+                video.srcObject = stream;
+                
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        resolve();
+                    };
+                });
+                
+                video.play();
+                resizeCanvas();
+                drawFrame();
+                
+                initDots(); 
+                
+                loadingScreen.classList.add('fade-out');
+                setTimeout(() => {
+                    loadingScreen.style.display = 'none';
+                }, 800); 
+                
+            } catch (err) {
+                console.error("Camera Error:", err);
+                if (!retryMode) {
+                    initCamera(true);
+                } else {
+                    showErrorUI(err);
+                }
+            }
+        }
+
+        function showErrorUI(err) {
+            loadingText.style.display = 'none';
+            startBtn.classList.add('hidden'); 
+            errorMsg.innerText = `相機無法啟動: ${err.name}\n請檢查瀏覽器權限`;
+            errorMsg.classList.remove('hidden');
+            const retryBtn = document.createElement('button');
+            retryBtn.innerText = "重試";
+            retryBtn.className = "mt-4 px-6 py-2 border border-red-400 text-red-400 rounded-full text-sm uppercase";
+            retryBtn.onclick = () => location.reload();
+            controlsArea.appendChild(retryBtn);
+        }
+
+        function drawFrame() {
+            if (!video.paused && !video.ended) {
+                const videoRatio = video.videoWidth / video.videoHeight;
+                const targetRatio = CANVAS_WIDTH / CANVAS_HEIGHT;
+                
+                let sWidth, sHeight, sx, sy;
+
+                if (targetRatio > videoRatio) {
+                    sWidth = video.videoWidth;
+                    sHeight = video.videoWidth / targetRatio;
+                    sx = 0;
+                    sy = (video.videoHeight - sHeight) / 2;
+                } else {
+                    sWidth = video.videoHeight * targetRatio;
+                    sHeight = video.videoHeight;
+                    sx = (video.videoWidth - sWidth) / 2;
+                    sy = 0;
+                }
+
+                ctx.save();
+                if (facingMode === 'user') {
+                    ctx.translate(CANVAS_WIDTH, 0);
+                    ctx.scale(-1, 1);
+                }
+                ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                ctx.restore();
+
+                if (overlayImg.complete && overlayImg.naturalHeight !== 0) {
+                    ctx.drawImage(overlayImg, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                }
+                animationId = requestAnimationFrame(drawFrame);
+            }
+        }
+
+        shutterBtn.addEventListener('click', () => {
+            flash.classList.add('flash-active');
+            setTimeout(() => flash.classList.remove('flash-active'), 100);
+            cancelAnimationFrame(animationId);
+            
+            canvas.toBlob(async (blob) => {
+                if (!blob) {
+                    showMsg("儲存失敗");
+                    drawFrame();
+                    return;
+                }
+                const file = new File([blob], `wedding-photo-${Date.now()}.jpg`, { type: "image/jpeg" });
+                if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                    try {
+                        await navigator.share({
+                            files: [file],
+                            title: 'Wedding Photo',
+                            text: 'Cherry & Cheukyau Wedding'
+                        });
+                        showMsg("請選擇「儲存影像」");
+                    } catch (err) {
+                        if (err.name !== 'AbortError') fallbackDownload(blob);
+                    }
+                } else {
+                    fallbackDownload(blob);
+                }
+                drawFrame();
+            }, 'image/jpeg', 0.95);
+        });
+
+        function fallbackDownload(blob) {
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `photo-${Date.now()}.jpg`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            showMsg("照片已下載");
+        }
+
+        switchBtn.addEventListener('click', () => {
+            facingMode = facingMode === 'user' ? 'environment' : 'user';
+            initCamera(); 
+        });
+
+        let touchStartX = 0;
+        let touchEndX = 0;
+        const minSwipeDistance = 50; 
+
+        appFrame.addEventListener('touchstart', e => {
+            touchStartX = e.changedTouches[0].screenX;
+        }, {passive: true});
+
+        appFrame.addEventListener('touchend', e => {
+            touchEndX = e.changedTouches[0].screenX;
+            handleSwipe();
+        }, {passive: true});
+
+        function handleSwipe() {
+            const distance = touchEndX - touchStartX;
+            const maxIndex = (useDemo ? demoFilters.length : filterList.length) - 1;
+
+            if (Math.abs(distance) > minSwipeDistance) {
+                if (distance < 0) {
+                    if (currentFilterIndex < maxIndex) {
+                        currentFilterIndex++;
+                    } else {
+                        currentFilterIndex = 0;
+                    }
+                } else {
+                    if (currentFilterIndex > 0) {
+                        currentFilterIndex--;
+                    } else {
+                        currentFilterIndex = maxIndex;
+                    }
+                }
+                loadCurrentFilter();
+            }
+        }
+
+        function showMsg(text) {
+            const msgBox = document.getElementById('message');
+            document.getElementById('msg-text').innerText = text;
+            msgBox.classList.remove('hidden');
+            if (msgBox.timeoutId) clearTimeout(msgBox.timeoutId);
+            msgBox.timeoutId = setTimeout(() => msgBox.classList.add('hidden'), 1500);
+        }
+
+        window.addEventListener('load', () => {
+            loadCurrentFilter();
+            resizeCanvas(); 
+            
+            setTimeout(() => {
+                const hint = document.getElementById('swipe-hint');
+                if(hint) hint.classList.add('hidden');
+            }, 8000); 
+        });
+    </script>
+</body>
+</html>
